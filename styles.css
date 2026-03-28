@@ -1,0 +1,72 @@
+.dotfiles-view {
+  padding: 0;
+  user-select: none;
+}
+
+.dotfiles-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.dotfiles-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.dotfiles-refresh-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  border-radius: 3px;
+}
+
+.dotfiles-refresh-btn:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.dotfiles-list {
+  overflow-y: auto;
+  height: calc(100% - 36px);
+}
+
+.dotfiles-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  padding-right: 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  margin: 1px 4px;
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+.dotfiles-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.dotfiles-icon {
+  font-size: 10px;
+  color: var(--text-muted);
+  min-width: 12px;
+  text-align: center;
+}
+
+.dotfiles-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
