@@ -3,7 +3,7 @@
   "name": "Show Dotfiles",
   "version": "0.1.0",
   "minAppVersion": "1.0.0",
-  "description": "Show hidden dot-prefixed folders and files in the file explorer",
+  "description": "Show hidden dot-prefixed folders and files in the file explorer.",
   "author": "chenqing0106",
   "authorUrl": "https://github.com/chenqing0106",
   "fundingUrl": "",
