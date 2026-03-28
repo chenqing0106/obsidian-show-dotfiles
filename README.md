@@ -1,5 +1,7 @@
 # Show Dotfiles
 
+[中文文档](README_zh.md)
+
 An Obsidian plugin that lets you browse and edit dot-prefixed hidden folders (like `.claude`, `.cursor`, `.git`) directly in a sidebar panel.
 
 ## Why
