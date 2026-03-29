@@ -47,6 +47,7 @@
   padding-top: 3px;
   padding-bottom: 3px;
   padding-right: 8px;
+  padding-left: var(--row-indent, 8px);
   cursor: pointer;
   border-radius: 4px;
   margin: 1px 4px;
@@ -69,4 +70,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dotfiles-icon-file {
+  opacity: 0.4;
+}
+
+.dotfiles-label-dir {
+  font-weight: 500;
+}
+
+/* Hide the temp preview folder from the file explorer */
+.nav-folder-title[data-path="__dotfile_preview__"] ~ *,
+.nav-folder:has(> .nav-folder-title[data-path="__dotfile_preview__"]) {
+  display: none !important;
 }

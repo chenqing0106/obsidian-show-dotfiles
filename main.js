@@ -35,6 +35,7 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
 var fs = __toESM(require("node:fs"));
 var path = __toESM(require("node:path"));
+var import_electron = require("electron");
 var VIEW_TYPE = "show-dotfiles";
 var VAULT_OPENABLE_EXTS = /* @__PURE__ */ new Set([".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".ts", ".js", ".css", ".html", ".sh", ".env"]);
 var DEFAULT_SETTINGS = {
@@ -57,17 +58,18 @@ var DotfilesView = class extends import_obsidian.ItemView {
   getIcon() {
     return "folder-dot";
   }
-  async onOpen() {
+  onOpen() {
     this.tree = this.readDotEntries(this.vaultPath);
     this.render();
     const writeBack = (0, import_obsidian.debounce)((file) => {
       const originalPath = this.syncMap.get(file.path);
       if (!originalPath) return;
-      this.app.vault.read(file).then((content) => {
+      void this.app.vault.read(file).then((content) => {
         fs.writeFileSync(originalPath, content, "utf-8");
       });
     }, 500, true);
     this.registerEvent(this.app.vault.on("modify", writeBack));
+    return Promise.resolve();
   }
   shouldShow(name, isDir, fullPath) {
     if (this.plugin.settings.showAllFiles) return true;
@@ -92,7 +94,7 @@ var DotfilesView = class extends import_obsidian.ItemView {
   }
   readDotEntries(dirPath) {
     try {
-      return fs.readdirSync(dirPath).filter((name) => name.startsWith(".") && name !== ".obsidian").map((name) => {
+      return fs.readdirSync(dirPath).filter((name) => name.startsWith(".") && name !== this.app.vault.configDir).map((name) => {
         const fullPath = path.join(dirPath, name);
         const stat = fs.statSync(fullPath);
         return { name, fullPath, isDir: stat.isDirectory(), expanded: false };
@@ -126,7 +128,7 @@ var DotfilesView = class extends import_obsidian.ItemView {
     const header = container.createDiv("dotfiles-header");
     header.createEl("span", { text: "Dotfiles", cls: "dotfiles-title" });
     const refreshBtn = header.createEl("button", { cls: "dotfiles-refresh-btn", attr: { "aria-label": "Refresh" } });
-    refreshBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>`;
+    (0, import_obsidian.setIcon)(refreshBtn, "refresh-cw");
     refreshBtn.addEventListener("click", () => {
       this.tree = this.readDotEntries(this.vaultPath);
       this.render();
@@ -137,18 +139,18 @@ var DotfilesView = class extends import_obsidian.ItemView {
   renderEntries(container, entries, depth) {
     for (const entry of entries) {
       const row = container.createDiv("dotfiles-row");
-      row.style.paddingLeft = `${depth * 16 + 8}px`;
+      row.setCssProps({ "--row-indent": `${depth * 16 + 8}px` });
       const icon = row.createSpan("dotfiles-icon");
       if (entry.isDir) {
         icon.setText(entry.expanded ? "\u25BE" : "\u25B8");
       } else {
         icon.setText("\xB7");
-        icon.style.opacity = "0.4";
+        icon.addClass("dotfiles-icon-file");
       }
       const label = row.createSpan("dotfiles-label");
       label.setText(entry.name);
-      if (entry.isDir) label.style.fontWeight = "500";
-      row.addEventListener("click", async () => {
+      if (entry.isDir) label.addClass("dotfiles-label-dir");
+      row.addEventListener("click", () => {
         if (entry.isDir) {
           entry.expanded = !entry.expanded;
           if (entry.expanded && !entry.children) {
@@ -156,7 +158,7 @@ var DotfilesView = class extends import_obsidian.ItemView {
           }
           this.render();
         } else {
-          await this.openFile(entry.fullPath);
+          void this.openFile(entry.fullPath);
         }
       });
       if (entry.isDir && entry.expanded && entry.children) {
@@ -189,8 +191,7 @@ var DotfilesView = class extends import_obsidian.ItemView {
         console.error("show-dotfiles: failed to open text file", e);
       }
     } else {
-      const { shell } = require("electron");
-      shell.openPath(filePath);
+      void import_electron.shell.openPath(filePath);
     }
   }
   async onClose() {
@@ -217,12 +218,13 @@ var ShowDotfilesPlugin = class extends import_obsidian.Plugin {
   async onload() {
     await this.loadSettings();
     this.excludePreviewFolder();
-    const vaultPath = this.app.vault.adapter.getBasePath();
+    const adapter = this.app.vault.adapter;
+    const vaultPath = adapter instanceof import_obsidian.FileSystemAdapter ? adapter.getBasePath() : "";
     this.registerView(VIEW_TYPE, (leaf) => new DotfilesView(leaf, vaultPath, this));
-    this.addRibbonIcon("folder-dot", "Show Dotfiles", () => this.activateView());
+    this.addRibbonIcon("folder-dot", "Show dotfiles", () => this.activateView());
     this.addCommand({
       id: "open-dotfiles-panel",
-      name: "Open Dotfiles panel",
+      name: "Open dotfiles panel",
       callback: () => this.activateView()
     });
     this.addSettingTab(new ShowDotfilesSettingTab(this.app, this));
@@ -234,7 +236,7 @@ var ShowDotfilesPlugin = class extends import_obsidian.Plugin {
       leaf = workspace.getLeftLeaf(false);
       await leaf.setViewState({ type: VIEW_TYPE, active: true });
     }
-    workspace.revealLeaf(leaf);
+    await workspace.revealLeaf(leaf);
   }
   refreshView() {
     const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
@@ -249,17 +251,8 @@ var ShowDotfilesPlugin = class extends import_obsidian.Plugin {
     if (!filters.includes("__dotfile_preview__")) {
       vault.setConfig("userIgnoreFilters", [...filters, "__dotfile_preview__"]);
     }
-    this.register(() => {
-    });
-    const style = document.createElement("style");
-    style.id = "show-dotfiles-hide-preview";
-    style.textContent = `.nav-folder-title[data-path="__dotfile_preview__"] ~ *,
-      .nav-folder:has(> .nav-folder-title[data-path="__dotfile_preview__"]) { display: none !important; }`;
-    document.head.appendChild(style);
-    this.register(() => style.remove());
   }
   onunload() {
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE);
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());

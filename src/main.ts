@@ -1,6 +1,7 @@
-import { App, ItemView, Plugin, PluginSettingTab, Setting, TFile, WorkspaceLeaf, debounce } from "obsidian";
+import { App, FileSystemAdapter, ItemView, Plugin, PluginSettingTab, Setting, TFile, WorkspaceLeaf, debounce, setIcon } from "obsidian";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { shell } from "electron";
 
 const VIEW_TYPE = "show-dotfiles";
 
@@ -39,19 +40,20 @@ class DotfilesView extends ItemView {
   getDisplayText() { return "Dotfiles"; }
   getIcon() { return "folder-dot"; }
 
-  async onOpen() {
+  onOpen(): Promise<void> {
     this.tree = this.readDotEntries(this.vaultPath);
     this.render();
 
     const writeBack = debounce((file: TFile) => {
       const originalPath = this.syncMap.get(file.path);
       if (!originalPath) return;
-      this.app.vault.read(file).then(content => {
+      void this.app.vault.read(file).then(content => {
         fs.writeFileSync(originalPath, content, "utf-8");
       });
     }, 500, true);
 
     this.registerEvent(this.app.vault.on("modify", writeBack));
+    return Promise.resolve();
   }
 
   private shouldShow(name: string, isDir: boolean, fullPath?: string): boolean {
@@ -73,14 +75,16 @@ class DotfilesView extends ItemView {
           return true;
         }
       }
-    } catch {}
+    } catch {
+      // unable to read directory
+    }
     return false;
   }
 
   private readDotEntries(dirPath: string): DirEntry[] {
     try {
       return fs.readdirSync(dirPath)
-        .filter(name => name.startsWith(".") && name !== ".obsidian")
+        .filter(name => name.startsWith(".") && name !== this.app.vault.configDir)
         .map(name => {
           const fullPath = path.join(dirPath, name);
           const stat = fs.statSync(fullPath);
@@ -124,7 +128,7 @@ class DotfilesView extends ItemView {
     header.createEl("span", { text: "Dotfiles", cls: "dotfiles-title" });
 
     const refreshBtn = header.createEl("button", { cls: "dotfiles-refresh-btn", attr: { "aria-label": "Refresh" } });
-    refreshBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>`;
+    setIcon(refreshBtn, "refresh-cw");
     refreshBtn.addEventListener("click", () => {
       this.tree = this.readDotEntries(this.vaultPath);
       this.render();
@@ -137,21 +141,21 @@ class DotfilesView extends ItemView {
   private renderEntries(container: HTMLElement, entries: DirEntry[], depth: number) {
     for (const entry of entries) {
       const row = container.createDiv("dotfiles-row");
-      row.style.paddingLeft = `${depth * 16 + 8}px`;
+      row.setCssProps({ "--row-indent": `${depth * 16 + 8}px` });
 
       const icon = row.createSpan("dotfiles-icon");
       if (entry.isDir) {
         icon.setText(entry.expanded ? "▾" : "▸");
       } else {
         icon.setText("·");
-        icon.style.opacity = "0.4";
+        icon.addClass("dotfiles-icon-file");
       }
 
       const label = row.createSpan("dotfiles-label");
       label.setText(entry.name);
-      if (entry.isDir) label.style.fontWeight = "500";
+      if (entry.isDir) label.addClass("dotfiles-label-dir");
 
-      row.addEventListener("click", async () => {
+      row.addEventListener("click", () => {
         if (entry.isDir) {
           entry.expanded = !entry.expanded;
           if (entry.expanded && !entry.children) {
@@ -159,7 +163,7 @@ class DotfilesView extends ItemView {
           }
           this.render();
         } else {
-          await this.openFile(entry.fullPath);
+          void this.openFile(entry.fullPath);
         }
       });
 
@@ -189,17 +193,16 @@ class DotfilesView extends ItemView {
           await this.app.vault.adapter.mkdir("__dotfile_preview__");
           tmpFile = await this.app.vault.create(tmpPath, content);
         } else {
-          await this.app.vault.modify(tmpFile as TFile, content);
+          await this.app.vault.modify(tmpFile, content);
         }
         this.syncMap.set(tmpPath, filePath);
-        await this.app.workspace.getLeaf("tab").openFile(tmpFile as TFile);
+        await this.app.workspace.getLeaf("tab").openFile(tmpFile);
       } catch (e) {
         console.error("show-dotfiles: failed to open text file", e);
       }
     } else {
       // 二进制或未知格式：用系统默认程序打开
-      const { shell } = require("electron");
-      shell.openPath(filePath);
+      void shell.openPath(filePath);
     }
   }
 
@@ -240,14 +243,15 @@ export default class ShowDotfilesPlugin extends Plugin {
     await this.loadSettings();
     this.excludePreviewFolder();
 
-    const vaultPath = (this.app.vault.adapter as any).getBasePath();
+    const adapter = this.app.vault.adapter;
+    const vaultPath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
     this.registerView(VIEW_TYPE, (leaf) => new DotfilesView(leaf, vaultPath, this));
 
-    this.addRibbonIcon("folder-dot", "Show Dotfiles", () => this.activateView());
+    this.addRibbonIcon("folder-dot", "Show dotfiles", () => this.activateView());
 
     this.addCommand({
       id: "open-dotfiles-panel",
-      name: "Open Dotfiles panel",
+      name: "Open dotfiles panel",
       callback: () => this.activateView(),
     });
 
@@ -261,35 +265,27 @@ export default class ShowDotfilesPlugin extends Plugin {
       leaf = workspace.getLeftLeaf(false)!;
       await leaf.setViewState({ type: VIEW_TYPE, active: true });
     }
-    workspace.revealLeaf(leaf);
+    await workspace.revealLeaf(leaf);
   }
 
   refreshView() {
     const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
     if (leaf?.view instanceof DotfilesView) {
-      (leaf.view as DotfilesView).render();
+      leaf.view.render();
     }
   }
 
   private excludePreviewFolder() {
     // 从搜索/Graph 排除
-    const vault = this.app.vault as any;
+    const vault = this.app.vault as unknown as { getConfig: (key: string) => string[] | null; setConfig: (key: string, value: string[]) => void };
     const filters: string[] = vault.getConfig("userIgnoreFilters") ?? [];
     if (!filters.includes("__dotfile_preview__")) {
       vault.setConfig("userIgnoreFilters", [...filters, "__dotfile_preview__"]);
     }
-    // 从文件列表隐藏
-    this.register(() => {});
-    const style = document.createElement("style");
-    style.id = "show-dotfiles-hide-preview";
-    style.textContent = `.nav-folder-title[data-path="__dotfile_preview__"] ~ *,
-      .nav-folder:has(> .nav-folder-title[data-path="__dotfile_preview__"]) { display: none !important; }`;
-    document.head.appendChild(style);
-    this.register(() => style.remove());
   }
 
   onunload() {
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE);
+    // intentionally empty — do not detach leaves to preserve user's layout
   }
 
   async loadSettings() {
