@@ -121,6 +121,27 @@ var DotfilesView = class extends import_obsidian.ItemView {
       return [];
     }
   }
+  getExpandedPaths(entries) {
+    const paths = /* @__PURE__ */ new Set();
+    for (const entry of entries) {
+      if (entry.isDir && entry.expanded) {
+        paths.add(entry.fullPath);
+        if (entry.children) {
+          for (const p of this.getExpandedPaths(entry.children)) paths.add(p);
+        }
+      }
+    }
+    return paths;
+  }
+  restoreExpanded(entries, expandedPaths) {
+    for (const entry of entries) {
+      if (entry.isDir && expandedPaths.has(entry.fullPath)) {
+        entry.expanded = true;
+        entry.children = this.readChildren(entry);
+        this.restoreExpanded(entry.children, expandedPaths);
+      }
+    }
+  }
   render() {
     const container = this.containerEl.children[1];
     container.empty();
@@ -130,7 +151,9 @@ var DotfilesView = class extends import_obsidian.ItemView {
     const refreshBtn = header.createEl("button", { cls: "dotfiles-refresh-btn", attr: { "aria-label": "Refresh" } });
     (0, import_obsidian.setIcon)(refreshBtn, "refresh-cw");
     refreshBtn.addEventListener("click", () => {
+      const expanded = this.getExpandedPaths(this.tree);
       this.tree = this.readDotEntries(this.vaultPath);
+      this.restoreExpanded(this.tree, expanded);
       this.render();
     });
     const list = container.createDiv("dotfiles-list");

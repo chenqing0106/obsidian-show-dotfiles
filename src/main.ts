@@ -119,6 +119,29 @@ class DotfilesView extends ItemView {
     }
   }
 
+  private getExpandedPaths(entries: DirEntry[]): Set<string> {
+    const paths = new Set<string>();
+    for (const entry of entries) {
+      if (entry.isDir && entry.expanded) {
+        paths.add(entry.fullPath);
+        if (entry.children) {
+          for (const p of this.getExpandedPaths(entry.children)) paths.add(p);
+        }
+      }
+    }
+    return paths;
+  }
+
+  private restoreExpanded(entries: DirEntry[], expandedPaths: Set<string>) {
+    for (const entry of entries) {
+      if (entry.isDir && expandedPaths.has(entry.fullPath)) {
+        entry.expanded = true;
+        entry.children = this.readChildren(entry);
+        this.restoreExpanded(entry.children, expandedPaths);
+      }
+    }
+  }
+
   render() {
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
@@ -130,7 +153,9 @@ class DotfilesView extends ItemView {
     const refreshBtn = header.createEl("button", { cls: "dotfiles-refresh-btn", attr: { "aria-label": "Refresh" } });
     setIcon(refreshBtn, "refresh-cw");
     refreshBtn.addEventListener("click", () => {
+      const expanded = this.getExpandedPaths(this.tree);
       this.tree = this.readDotEntries(this.vaultPath);
+      this.restoreExpanded(this.tree, expanded);
       this.render();
     });
 
